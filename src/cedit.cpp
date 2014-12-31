@@ -26,14 +26,11 @@ int main( int argc, char *args[] )
 	SDL_Event event;
 	SDL_Surface *tilemap = NULL;
 
-	if( argc < 2 )
+	/*if( argc < 2 )
 	{
 		std::cout << "Not enough parameters\n";
 		return 1;
-	}
-
-	tilemap = IMG_Load( "tilemap.bmp" );
-
+	}*/
 
 	if ( SDL_Init( SDL_INIT_EVERYTHING ) == -1 )
 	{
@@ -46,7 +43,15 @@ int main( int argc, char *args[] )
 	}
 	SDL_WM_SetCaption( "Core Editor - By Koen van Vliet", NULL);
 
+	tilemap = IMG_Load( "tileset.bmp" );
+	if( tilemap == NULL )
+	{
+		std::cout << "Error loading tileset.bmp\n";
+		return 1;
+	}
+
 	// Ok, now that has been taken care of I can start working on the world editor...
+	apply_surface( 0, 0, tilemap, screen );
 
 	if(SDL_Flip(screen) == -1)
 	{
