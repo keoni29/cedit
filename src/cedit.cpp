@@ -20,16 +20,15 @@ const int ROOM_HEIGHT = 8;
 const int SET_WIDTH = 8;
 const int SET_HEIGHT = 8;
 
-const int VIEW_WIDTH = 3;
-const int VIEW_HEIGHT = 3;
+int VIEW_WIDTH = 3;
+int VIEW_HEIGHT = 4;
 
-const int SCREEN_WIDTH = ROOM_WIDTH * VIEW_WIDTH + SET_WIDTH + 2;
-const int SCREEN_HEIGHT = ROOM_HEIGHT * VIEW_HEIGHT + 2;
+int SCREEN_WIDTH;
+int SCREEN_HEIGHT;
 const int SCREEN_BPP = 32;
 
 SDL_Surface *screen = NULL;
 SDL_Surface *tileset = NULL;
-SDL_Surface *background = NULL;
 
 SDL_Rect tile_clip( int ix )
 {
@@ -58,15 +57,15 @@ SDL_Surface *load_image( std::string filename)
 void apply_surface(int x, int y, SDL_Surface* source, SDL_Surface* destination, SDL_Rect* clip = NULL)
 {
 	SDL_Rect offset;
-	offset.x = x * GRID;
-	offset.y = y * GRID;
+	offset.x = x;
+	offset.y = y;
 	SDL_BlitSurface(source, clip, destination, &offset);
 }
 
 void draw_tile( int x, int y, int ix )
 {
 	SDL_Rect tilec = ::tile_clip( ix );
-	apply_surface( x, y, tileset, screen, &tilec );
+	apply_surface( x * GRID, y * GRID, tileset, screen, &tilec );
 }
 
 bool Block::get_rel_xy( int cx, int cy, Coord *t )
@@ -129,9 +128,52 @@ int main( int argc, char *args[] )
 	 * - Initialize SDL
 	 * - Load assets
 	 */
+
+	bool mdl = false, mdr = false;
+	bool redraw;
+	bool quit = false;
+	char *tilemap = NULL;
 	int rx, ry;
-	int buffer_size = ROOM_WIDTH * ROOM_HEIGHT * WORLD_WIDTH * WORLD_HEIGHT;
-	char *tilemap = (char *)malloc( buffer_size );
+	int buffer_size;
+	Block b_room[VIEW_WIDTH][VIEW_HEIGHT];
+	Block b_picker;
+	Block b_map;
+	int x, y;
+	SDL_Event event;
+	int tile = 1;
+	int cx, cy;
+	int lcx, lcy;
+	int view_x = 0, view_y = 0;
+
+	SDL_Surface *background = NULL;
+	SDL_Surface *arrows = NULL;
+	SDL_Rect arrow_u = { 0, 0, 32, 14 };
+	SDL_Rect arrow_d = { 0, 34, 32, 14 };
+	SDL_Rect arrow_l = { 0, 14, 16, 20 };
+	SDL_Rect arrow_r = { 16, 14, 16, 20 };
+
+	if( VIEW_WIDTH > WORLD_WIDTH )
+	{
+		std::cout << "Warning: View width is larger than world width. Resizing view.\n";
+		VIEW_WIDTH = WORLD_WIDTH;
+	}
+	if( VIEW_HEIGHT > WORLD_HEIGHT )
+	{
+		std::cout << "Warning: View height is larger than world height. Resizing view.\n";
+		VIEW_HEIGHT = WORLD_HEIGHT;
+	}
+
+	SCREEN_WIDTH = ROOM_WIDTH * VIEW_WIDTH + SET_WIDTH + 2;
+	SCREEN_HEIGHT = ROOM_HEIGHT * VIEW_HEIGHT + 2;
+
+	buffer_size = ROOM_WIDTH * ROOM_HEIGHT * WORLD_WIDTH * WORLD_HEIGHT;
+	tilemap = (char *)calloc( buffer_size, sizeof(char) );
+
+	if( tilemap == NULL)
+	{
+		std::cout << "Error: Could not allocate memory\n";
+		return 1;
+	}
 
 	/* Initialize SDL */
 	if ( SDL_Init( SDL_INIT_EVERYTHING ) == -1 )
@@ -151,16 +193,15 @@ int main( int argc, char *args[] )
 	/* Load assets */
 	tileset = load_image( "tileset.bmp" );
 	background = load_image( "background.bmp" );
-
-	if( tileset == NULL || background == NULL )
+	arrows = load_image( "arrows.bmp" );
+	if( tileset == NULL || background == NULL || arrows == NULL )
 	{
 		std::cout << "Error loading image files.\n";
 		return 1;
 	}
 
-	/* Load world file */
+	/* Load buffer from file file */
 	std::ifstream inFile( "data.bin", std::ifstream::out | std::ifstream::binary );
-
 	if (inFile != NULL)
 	{
  		inFile.read( tilemap, buffer_size );
@@ -171,19 +212,6 @@ int main( int argc, char *args[] )
 	 * - Initialize editor
 	 * - Handle events
 	 */
-
-	bool mdl = false, mdr = false;
-	bool redraw;
-	bool quit = false;
-	Block b_room[VIEW_WIDTH][VIEW_HEIGHT];
-	Block b_picker;
-	Block b_map;
-	int x, y;
-	SDL_Event event;
-	int tile = 1;
-	int cx, cy;
-	int lcx, lcy;
-	int view_x = 0, view_y = 0;
 
 	/* Initialize editor
 	 * - Create all editor blocks
@@ -210,7 +238,7 @@ int main( int argc, char *args[] )
 	b_picker = {
 		NULL,
 		SCREEN_WIDTH - ( SET_WIDTH ),
-		0,
+		1,
 		SET_WIDTH,
 		SET_HEIGHT
 	};
@@ -223,7 +251,45 @@ int main( int argc, char *args[] )
 		WORLD_HEIGHT
 	};
 
-	apply_surface(b_picker.x, b_picker.y, tileset, screen );
+	apply_surface(b_picker.x * GRID, b_picker.y * GRID, tileset, screen );
+	apply_surface(
+		( ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x + 1 ) * GRID ) / 2 - ( arrow_u.w / 2 ),
+		( b_room[0][0].y - 1 ) * GRID,
+		arrows,
+		screen,
+		&arrow_u
+	);
+
+	apply_surface(
+		( ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x + 1 ) * GRID ) / 2 - ( arrow_d.w / 2 ),
+		( VIEW_HEIGHT * ROOM_HEIGHT + b_room[0][0].y ) * GRID,
+		arrows,
+		screen,
+		&arrow_d
+	);
+
+	apply_surface(
+		( b_room[0][0].x - 1 ) * GRID,
+		( ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y + 1 ) * GRID ) / 2 - ( arrow_l.h / 2 ),
+		arrows,
+		screen,
+		&arrow_l
+	);
+
+	apply_surface(
+		( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x ) * GRID,
+		( ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y + 1 ) * GRID ) / 2 - ( arrow_r.h / 2 ),
+		arrows,
+		screen,
+		&arrow_r
+	);
+
+
+	if( SDL_Flip( screen ) == -1 )
+	{
+		std::cout << "Error updating screen!\n";
+		return 1;
+	}
 
 	/* Handle events
 	 * - Move mouse: Place tile if left mouse button is held down
@@ -241,7 +307,7 @@ int main( int argc, char *args[] )
 				for( x = 0; x < VIEW_WIDTH; x++ )
 				{
 					b_room[x][y].buff = tilemap + ROOM_WIDTH * ROOM_HEIGHT * ( WORLD_WIDTH * ( view_y + y ) + view_x + x );
-					apply_surface(b_room[x][y].x, b_room[x][y].y , background, screen );
+					apply_surface(b_room[x][y].x * GRID, b_room[x][y].y * GRID, background, screen );
 					b_room[x][y].draw( view_x, view_y );
 				}
 			}
@@ -269,7 +335,16 @@ int main( int argc, char *args[] )
 							view_x --;
 						}
 					}
-					else if ( cy == 0 )
+					else if( cx == ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x ) )
+					{
+						if( view_x < WORLD_WIDTH - VIEW_WIDTH )
+						{
+							redraw = true;
+							view_x ++;
+						}
+					}
+
+					if ( cy == 0 )
 					{
 						if( view_y )
 						{
@@ -277,14 +352,16 @@ int main( int argc, char *args[] )
 							view_y --;
 						}
 					}
-					else if( view_x > ( ROOM_WIDTH * VIEW_WIDTH + 1 ) )
+					else if( cy == ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y ) )
 					{
-						if( view_x < WORLD_WIDTH - VIEW_WIDTH )
+						if( view_y < WORLD_HEIGHT - VIEW_HEIGHT )
 						{
-
+							redraw = true;
+							view_y ++;
 						}
 					}
-					else if( cx != lcx || cy != lcy ){
+					
+					if( cx != lcx || cy != lcy ){
 						if( b_picker.get_rel_xy( cx, cy, &t ) )
 						{
 							tile = t.i;
@@ -333,7 +410,7 @@ int main( int argc, char *args[] )
 				{
 					if ( b_room[rx][ry].tile_place( cx, cy, tid ) )
 					{
-						std::cout << "Tile placed in room[" << rx << ", " << ry << "] offs =" << offs << "\n";
+						std::cout << "Tile placed in room[" << rx << ", " << ry << "]\n";
 					}
 				}
 				lcx = cx;
@@ -342,11 +419,13 @@ int main( int argc, char *args[] )
 		}
 	}
 
-
 	SDL_FreeSurface( tileset );
 	SDL_Quit();
 
+	/* Save buffer to file */
 	std::ofstream outFile( "data.bin", std::ofstream::out | std::ofstream::binary );
 	outFile.write( tilemap, buffer_size );
+
+	free(tilemap);
 	return 0;
 }
