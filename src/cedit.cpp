@@ -8,9 +8,6 @@
 #include "SDL/SDL_ttf.h"
 #include "cedit.h"
 
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 480;
-const int SCREEN_BPP = 32;
 const int GRID = 16;
 
 const int WORLD_WIDTH = 9;
@@ -20,6 +17,10 @@ const int ROOM_HEIGHT = 8;
 
 const int SET_WIDTH = 8;
 const int SET_HEIGHT = 8;
+
+const int SCREEN_WIDTH = ROOM_WIDTH * 3 + SET_WIDTH + 1;
+const int SCREEN_HEIGHT = ROOM_HEIGHT * 3;
+const int SCREEN_BPP = 32;
 
 SDL_Surface *screen = NULL;
 SDL_Surface *tileset = NULL;
@@ -39,20 +40,20 @@ SDL_Rect tile_clip( int ix ){
 void apply_surface(int x, int y, SDL_Surface* source, SDL_Surface* destination, SDL_Rect* clip = NULL)
 {
 	SDL_Rect offset;
-	offset.x = x;
-	offset.y = y;
+	offset.x = x * GRID;
+	offset.y = y * GRID;
 	SDL_BlitSurface(source, clip, destination, &offset);
 }
 
-bool Block::get_grid_xy( int cx, int cy, Coord *t )
+bool Block::get_rel_xy( int cx, int cy, Coord *t )
 {
 	int xrel;
 	int yrel;
 
-	xrel = ( cx - x ) / GRID;
-	yrel = ( cy - y ) / GRID;
+	xrel = ( cx - x );
+	yrel = ( cy - y );
 
-	if( cx >= x && cx < w * GRID + x && cy >= y && cy < h * GRID + y )
+	if( xrel >= 0 && xrel < w && yrel >= 0 && yrel < h )
 	{
 		t->x = xrel;
 		t->y = yrel;
@@ -69,9 +70,9 @@ bool Block::tile_place( int cx, int cy, int ix )
 	int yrel;
 	SDL_Rect tilec = ::tile_clip( ix );
 
-	get_grid_xy( cx, cy, &t );
+	get_rel_xy( cx, cy, &t );
 
-	::apply_surface( t.x * GRID + x , t.y * GRID + y, tileset, screen, &tilec );
+	::apply_surface( t.x + x, t.y + y, tileset, screen, &tilec );
 
 	if( SDL_Flip( screen ) == -1 )
 	{
@@ -94,7 +95,7 @@ int main( int argc, char *args[] )
 		return 1;
 	}
 
-	screen = SDL_SetVideoMode( SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_BPP, SDL_SWSURFACE);
+	screen = SDL_SetVideoMode( SCREEN_WIDTH * GRID, SCREEN_HEIGHT * GRID, SCREEN_BPP, SDL_SWSURFACE);
 	
 	if( screen == NULL )
 	{
@@ -127,6 +128,8 @@ int main( int argc, char *args[] )
 		int x, y;
 		SDL_Event event;
 		int tile;
+		int cx, cy;
+		int lcx, lcy;
 
 		/* Initialize editor
 		 * - Create all editor blocks
@@ -140,26 +143,26 @@ int main( int argc, char *args[] )
 			for( x = 0; x < 3; x++ )
 			{
 				b_room[x][y] = {
-					x * ROOM_WIDTH * GRID,
-					y * ROOM_HEIGHT * GRID,
+					x * ROOM_WIDTH,
+					y * ROOM_HEIGHT,
 					ROOM_WIDTH,
 					ROOM_HEIGHT
 				};
 
-				apply_surface(b_room[x][y].x, b_room[x][y].y , background, screen );
+				//apply_surface(b_room[x][y].x, b_room[x][y].y , background, screen );
 			}
 		}
 
 		b_picker = {
-			SCREEN_WIDTH - ( SET_WIDTH * GRID ),
+			SCREEN_WIDTH - ( SET_WIDTH ),
 			0,
 			SET_WIDTH,
 			SET_HEIGHT
 		};
 
 		b_map = {
-			SCREEN_WIDTH - ( WORLD_WIDTH * GRID ),
-			( SET_HEIGHT + 1 ) * GRID,
+			SCREEN_WIDTH - WORLD_WIDTH,
+			( SET_HEIGHT + 1 ),
 			WORLD_WIDTH,
 			WORLD_HEIGHT
 		};
@@ -188,11 +191,18 @@ int main( int argc, char *args[] )
 					if( event.button.button == SDL_BUTTON_LEFT )
 					{
 						Coord t;
+
 						mdl = true;
 
-						if( b_picker.get_grid_xy( event.button.x, event.button.y, &t ) )
-						{
-							tile = t.i;
+						lcx = cx;
+						lcy = cy;
+						cx = event.button.x / GRID;
+						cy = event.button.y / GRID;
+						if( cx != lcx || cy != lcy ){
+							if( b_picker.get_rel_xy( cx, cy, &t ) )
+							{
+								tile = t.i;
+							}
 						}
 					}
 					else if( event.button.button == SDL_BUTTON_RIGHT )
@@ -221,13 +231,19 @@ int main( int argc, char *args[] )
 				{
 					Coord txy;
 					int rx, ry;
-					rx = ( event.button.x - b_room[0][0].x ) / ( ROOM_WIDTH * GRID );
-					ry = ( event.button.y - b_room[0][0].y ) / ( ROOM_HEIGHT * GRID );
-					if (event.button.x >= 0 && rx < 3 && event.button.y >= 0 && ry < 3)
-					{
-						if ( b_room[rx][ry].tile_place( event.button.x, event.button.y, tile ) )
+					lcx = cx;
+					lcy = cy;
+					cx = event.button.x / GRID;
+					cy = event.button.y / GRID;
+					if( cx != lcx || cy != lcy ){
+						rx = ( cx - b_room[0][0].x ) / ROOM_WIDTH;
+						ry = ( cy - b_room[0][0].y ) / ROOM_HEIGHT;
+						if (rx >= 0 && rx < 3 && ry >= 0 && ry < 3)
 						{
-							std::cout << "Tile placed in room[" << rx << ", " << ry << "]\n";
+							if ( b_room[rx][ry].tile_place( cx, cy, tile ) )
+							{
+								std::cout << "Tile placed in room[" << rx << ", " << ry << "]\n";
+							}
 						}
 					}
 				}
