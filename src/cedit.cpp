@@ -6,30 +6,35 @@
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
 #include "SDL/SDL_ttf.h"
+#include "cedit.h"
 
-const int W_WIDTH = 800;
-const int W_HEIGHT = 480;
-const int W_BPP = 32;
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 480;
+const int SCREEN_BPP = 32;
 const int GRID = 16;
 
-const int W_SET = 8;
-const int H_SET = 8;
+const int WORLD_WIDTH = 9;
+const int WORLD_HEIGHT = 8;
+const int ROOM_WIDTH = 11;
+const int ROOM_HEIGHT = 8;
+
+const int SET_WIDTH = 8;
+const int SET_HEIGHT = 8;
 
 SDL_Surface *screen = NULL;
 SDL_Surface *tileset = NULL;
+SDL_Surface *background = NULL;
 
-typedef struct
-{ 
-	int x;
-	int y;
-} offs;
+SDL_Rect tile_clip( int ix ){
+	SDL_Rect tilec;
 
-typedef struct
-{
-	int x;
-	int y;
-	int id;
-} tile;
+	tilec.x = ( ix % SET_WIDTH ) * GRID;
+	tilec.y = ( ix / SET_WIDTH ) * GRID;
+	tilec.w = GRID;
+	tilec.h = GRID;
+
+	return tilec;
+}
 
 void apply_surface(int x, int y, SDL_Surface* source, SDL_Surface* destination, SDL_Rect* clip = NULL)
 {
@@ -39,14 +44,35 @@ void apply_surface(int x, int y, SDL_Surface* source, SDL_Surface* destination, 
 	SDL_BlitSurface(source, clip, destination, &offset);
 }
 
-bool tile_place( int x, int y, tile *t )
+bool Block::get_grid_xy( int cx, int cy, Coord *t )
 {
-	SDL_Rect tilec;
-	tilec.x = t->x * GRID;
-	tilec.y = t->y * GRID;
-	tilec.w = GRID;
-	tilec.h = GRID;
-	apply_surface( x * GRID, y * GRID, tileset, screen, &tilec );
+	int xrel;
+	int yrel;
+
+	xrel = ( cx - x ) / GRID;
+	yrel = ( cy - y ) / GRID;
+
+	if( cx >= x && cx < w * GRID + x && cy >= y && cy < h * GRID + y )
+	{
+		t->x = xrel;
+		t->y = yrel;
+		t->i = yrel * w + xrel;
+		return true;
+	}
+	return false;
+}
+
+bool Block::tile_place( int cx, int cy, int ix )
+{
+	Coord t;
+	int xrel;
+	int yrel;
+	SDL_Rect tilec = ::tile_clip( ix );
+
+	get_grid_xy( cx, cy, &t );
+
+	::apply_surface( t.x * GRID + x , t.y * GRID + y, tileset, screen, &tilec );
+
 	if( SDL_Flip( screen ) == -1 )
 	{
 		return false;
@@ -61,35 +87,29 @@ int main( int argc, char *args[] )
 	 * - Initialize SDL
 	 * - Load assets
 	 */
-	char *fset = (char *)"tileset.bmp";
-
-	/* Process parameters and flags */
-	if( argc < 2 )
-	{
-		std::cout << "No set specified. Trying to use default tileset.\n";
-	}
-	else
-	{
-		fset = args[1];
-	}
 
 	/* Initialize SDL */
 	if ( SDL_Init( SDL_INIT_EVERYTHING ) == -1 )
 	{
 		return 1;
 	}
-	screen = SDL_SetVideoMode( W_WIDTH, W_HEIGHT, W_BPP, SDL_SWSURFACE);
+
+	screen = SDL_SetVideoMode( SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_BPP, SDL_SWSURFACE);
+	
 	if( screen == NULL )
 	{
 		return 1;
 	}
+
 	SDL_WM_SetCaption( "Core Editor - By Koen van Vliet", NULL);
 
 	/* Load assets */
 	tileset = IMG_Load( "tileset.bmp" );
-	if( tileset == NULL )
+	background = IMG_Load( "background.bmp" );
+
+	if( tileset == NULL || background == NULL )
 	{
-		std::cout << "Error loading file: " << fset << "\n";
+		std::cout << "Error loading image files.\n";
 		return 1;
 	}
 
@@ -100,28 +120,51 @@ int main( int argc, char *args[] )
 	{
 		bool mdl = false, mdr = false;
 		bool quit = false;
+		char tilemap[ WORLD_WIDTH * WORLD_HEIGHT ][ ROOM_WIDTH * ROOM_HEIGHT ] = {0};
+		Block b_room[3][3];
+		Block b_picker;
+		Block b_map;
 		int x, y;
-		offs o_tp, o_we, o_wp, o_men;
 		SDL_Event event;
-		tile t;
+		int tile;
 
 		/* Initialize editor
-		 * - Set all editor positions
+		 * - Create all editor blocks
 		 * - Select tile
 		 * - Clip tile from set
 		 * - Show tileset on screen
 		 * - Update screen
 		 */
-		o_we.x = 0;
-		o_we.y = 0;
-		o_tp.x = W_WIDTH - ( 8 * GRID );
-		o_tp.y = 0;
+		for( y = 0; y < 3; y++ )
+		{
+			for( x = 0; x < 3; x++ )
+			{
+				b_room[x][y] = {
+					x * ROOM_WIDTH * GRID,
+					y * ROOM_HEIGHT * GRID,
+					ROOM_WIDTH,
+					ROOM_HEIGHT
+				};
 
-		t.x = 0;
-		t.y = 0;
-		t.id = 0;
+				apply_surface(b_room[x][y].x, b_room[x][y].y , background, screen );
+			}
+		}
 
-		apply_surface(o_tp.x, o_tp.y, tileset, screen );
+		b_picker = {
+			SCREEN_WIDTH - ( SET_WIDTH * GRID ),
+			0,
+			SET_WIDTH,
+			SET_HEIGHT
+		};
+
+		b_map = {
+			SCREEN_WIDTH - ( WORLD_WIDTH * GRID ),
+			( SET_HEIGHT + 1 ) * GRID,
+			WORLD_WIDTH,
+			WORLD_HEIGHT
+		};
+
+		apply_surface(b_picker.x, b_picker.y, tileset, screen );
 
 		if( SDL_Flip( screen ) == -1 )
 		{
@@ -144,15 +187,12 @@ int main( int argc, char *args[] )
 					/* Select tile */
 					if( event.button.button == SDL_BUTTON_LEFT )
 					{
-						int txx, tyy;
+						Coord t;
 						mdl = true;
-						txx = ( event.button.x - o_tp.x ) / GRID;
-						tyy = ( event.button.y - o_tp.y ) / GRID;
-						if( txx >= 0 && txx < W_SET && tyy >=0 && tyy < H_SET )
+
+						if( b_picker.get_grid_xy( event.button.x, event.button.y, &t ) )
 						{
-							t.x = txx;
-							t.y = tyy;
-							t.id = tyy * W_SET + txx;
+							tile = t.i;
 						}
 					}
 					else if( event.button.button == SDL_BUTTON_RIGHT )
@@ -179,12 +219,16 @@ int main( int argc, char *args[] )
 				/* Place tiles */
 				if( ( event.type == SDL_MOUSEMOTION && mdl ) || ( event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT ) )
 				{
-					x = ( event.button.x - o_we.x ) / GRID ;
-					y = ( event.button.y - o_we.y ) / GRID ;
-					std::cout << "x = " << x << ", y = " << y << ".\n";
-					if( x >= 0 && x < 33 && y >= 0 && y < 24 )
+					Coord txy;
+					int rx, ry;
+					rx = ( event.button.x - b_room[0][0].x ) / ( ROOM_WIDTH * GRID );
+					ry = ( event.button.y - b_room[0][0].y ) / ( ROOM_HEIGHT * GRID );
+					if (event.button.x >= 0 && rx < 3 && event.button.y >= 0 && ry < 3)
 					{
-						tile_place(x, y, &t);
+						if ( b_room[rx][ry].tile_place( event.button.x, event.button.y, tile ) )
+						{
+							std::cout << "Tile placed in room[" << rx << ", " << ry << "]\n";
+						}
 					}
 				}
 			}
