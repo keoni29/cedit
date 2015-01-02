@@ -28,7 +28,8 @@ SDL_Surface *screen = NULL;
 SDL_Surface *tileset = NULL;
 SDL_Surface *background = NULL;
 
-SDL_Rect tile_clip( int ix ){
+SDL_Rect tile_clip( int ix )
+{
 	SDL_Rect tilec;
 
 	tilec.x = ( ix % SET_WIDTH ) * GRID;
@@ -39,7 +40,8 @@ SDL_Rect tile_clip( int ix ){
 	return tilec;
 }
 
-SDL_Surface *load_image( std::string filename){
+SDL_Surface *load_image( std::string filename)
+{
 	SDL_Surface* loadedImage = NULL;
 	SDL_Surface* optimizedImage = NULL;
 	loadedImage = IMG_Load( filename.c_str() );
@@ -167,149 +169,147 @@ int main( int argc, char *args[] )
 	 * - Initialize editor
 	 * - Handle events
 	 */
+
+	bool mdl = false, mdr = false;
+	bool quit = false;
+	Block b_room[3][3];
+	Block b_picker;
+	Block b_map;
+	int x, y;
+	SDL_Event event;
+	int tile = 1;
+	int cx, cy;
+	int lcx, lcy;
+	int room_x = 0, room_y = 0;
+
+	/* Initialize editor
+	 * - Create all editor blocks
+	 * - Select tile
+	 * - Clip tile from set
+	 * - Show tileset on screen
+	 * - Update screen
+	 */
+	for( y = 0; y < 3; y++ )
 	{
-		bool mdl = false, mdr = false;
-		bool quit = false;
-		Block b_room[3][3];
-		Block b_picker;
-		Block b_map;
-		int x, y;
-		SDL_Event event;
-		int tile = 1;
-		int cx, cy;
-		int lcx, lcy;
-		int room_x = 0, room_y = 0;
-
-		/* Initialize editor
-		 * - Create all editor blocks
-		 * - Select tile
-		 * - Clip tile from set
-		 * - Show tileset on screen
-		 * - Update screen
-		 */
-		for( y = 0; y < 3; y++ )
+		for( x = 0; x < 3; x++ )
 		{
-			for( x = 0; x < 3; x++ )
-			{
-				b_room[x][y] = {
-					x,
-					y,
-					x * ROOM_WIDTH,
-					y * ROOM_HEIGHT,
-					ROOM_WIDTH,
-					ROOM_HEIGHT
-				};
+			b_room[x][y] = {
+				x,
+				y,
+				x * ROOM_WIDTH,
+				y * ROOM_HEIGHT,
+				ROOM_WIDTH,
+				ROOM_HEIGHT
+			};
 
-				apply_surface(b_room[x][y].x, b_room[x][y].y , background, screen );
-				b_room[x][y].draw( room_x, room_y, tilemap );
-			}
+			apply_surface(b_room[x][y].x, b_room[x][y].y , background, screen );
+			b_room[x][y].draw( room_x, room_y, tilemap );
 		}
+	}
 
 
-		b_picker = {
-			0,0,
-			SCREEN_WIDTH - ( SET_WIDTH ),
-			0,
-			SET_WIDTH,
-			SET_HEIGHT
-		};
+	b_picker = {
+		0,0,
+		SCREEN_WIDTH - ( SET_WIDTH ),
+		0,
+		SET_WIDTH,
+		SET_HEIGHT
+	};
 
-		b_map = {
-			0,0,
-			SCREEN_WIDTH - WORLD_WIDTH,
-			( SET_HEIGHT + 1 ),
-			WORLD_WIDTH,
-			WORLD_HEIGHT
-		};
+	b_map = {
+		0,0,
+		SCREEN_WIDTH - WORLD_WIDTH,
+		( SET_HEIGHT + 1 ),
+		WORLD_WIDTH,
+		WORLD_HEIGHT
+	};
 
-		apply_surface(b_picker.x, b_picker.y, tileset, screen );
+	apply_surface(b_picker.x, b_picker.y, tileset, screen );
 
-		if( SDL_Flip( screen ) == -1 )
+	if( SDL_Flip( screen ) == -1 )
+	{
+		std::cout << "Error updating screen!\n";
+		return 1;
+	}
+
+	/* Handle events
+	 * - Move mouse: Place tile if left mouse button is held down
+	 * - Left click: in world editor:Place tile/ in tile picker:Select tile
+	 * - Quit: Stop SDL and end application
+	 */
+	while( quit == false )
+	{
+		while( SDL_PollEvent( &event ) )
 		{
-			std::cout << "Error updating screen!\n";
-			return 1;
-		}
-
-		/* Handle events
-		 * - Move mouse: Place tile if left mouse button is held down
-		 * - Left click: in world editor:Place tile/ in tile picker:Select tile
-		 * - Quit: Stop SDL and end application
-		 */
-		while( quit == false )
-		{
-			while( SDL_PollEvent( &event ) )
+			cx = event.button.x / GRID;
+			cy = event.button.y / GRID;
+			if( event.type == SDL_MOUSEBUTTONDOWN )
 			{
-				cx = event.button.x / GRID;
-				cy = event.button.y / GRID;
-				if( event.type == SDL_MOUSEBUTTONDOWN )
+				/* Select tile */
+				if( event.button.button == SDL_BUTTON_LEFT )
 				{
-					/* Select tile */
-					if( event.button.button == SDL_BUTTON_LEFT )
-					{
-						Coord t;
-						mdl = true;
-
-						if( cx != lcx || cy != lcy ){
-							if( b_picker.get_rel_xy( cx, cy, &t ) )
-							{
-								tile = t.i;
-							}
-						}
-					}
-					else if( event.button.button == SDL_BUTTON_RIGHT )
-					{
-						mdr = true;
-					}
-				}
-				else if( event.type == SDL_MOUSEBUTTONUP )
-				{
-					switch( event.button.button )
-					{
-						case SDL_BUTTON_LEFT:
-							mdl = false;
-							break;
-						case SDL_BUTTON_RIGHT:
-							mdr = false;
-							break;
-					}
-				}
-				else if( event.type == SDL_QUIT )
-				{
-					quit = true;
-				}
-				/* Place tiles */
-				if( ( event.type == SDL_MOUSEMOTION && ( mdl || mdr ) ) || ( event.type == SDL_MOUSEBUTTONDOWN ) )
-				{
-					Coord txy;
-					int tid, offs;
-
-					if ( event.button.button == SDL_BUTTON_LEFT )
-					{
-						tid = tile;
-					}
-					else
-					{
-						tid = 0;
-					}
+					Coord t;
+					mdl = true;
 
 					if( cx != lcx || cy != lcy ){
-						rx = ( cx - b_room[0][0].x ) / ROOM_WIDTH;
-						ry = ( cy - b_room[0][0].y ) / ROOM_HEIGHT;
-						if (rx >= 0 && rx < 3 && ry >= 0 && ry < 3)
+						if( b_picker.get_rel_xy( cx, cy, &t ) )
 						{
-							offs = ROOM_WIDTH * ROOM_HEIGHT * ( WORLD_WIDTH * ( room_y + ry ) + room_x + rx );
-							if ( b_room[rx][ry].tile_place( cx, cy, tid, tilemap + offs ) )
-							{
-								std::cout << "Tile placed in room[" << rx << ", " << ry << "] offs =" << offs << "\n";
-							}
+							tile = t.i;
 						}
 					}
-					lcx = cx;
-					lcy = cy;
 				}
+				else if( event.button.button == SDL_BUTTON_RIGHT )
+				{
+					mdr = true;
+				}
+			}
+			else if( event.type == SDL_MOUSEBUTTONUP )
+			{
+				switch( event.button.button )
+				{
+					case SDL_BUTTON_LEFT:
+						mdl = false;
+						break;
+					case SDL_BUTTON_RIGHT:
+						mdr = false;
+						break;
+				}
+			}
+			else if( event.type == SDL_QUIT )
+			{
+				quit = true;
+			}
+			/* Place tiles */
+			if( ( event.type == SDL_MOUSEMOTION && ( mdl || mdr ) && ( cx != lcx || cy != lcy  ) ) || ( event.type == SDL_MOUSEBUTTONDOWN ) )
+			{
+				Coord txy;
+				int tid, offs;
+
+				if ( event.button.button == SDL_BUTTON_LEFT )
+				{
+					tid = tile;
+				}
+				else
+				{
+					tid = 0;
+				}
+
+				rx = ( cx - b_room[0][0].x ) / ROOM_WIDTH;
+				ry = ( cy - b_room[0][0].y ) / ROOM_HEIGHT;
+				if (rx >= 0 && rx < 3 && ry >= 0 && ry < 3)
+				{
+					offs = ROOM_WIDTH * ROOM_HEIGHT * ( WORLD_WIDTH * ( room_y + ry ) + room_x + rx );
+					if ( b_room[rx][ry].tile_place( cx, cy, tid, tilemap + offs ) )
+					{
+						std::cout << "Tile placed in room[" << rx << ", " << ry << "] offs =" << offs << "\n";
+					}
+				}
+				lcx = cx;
+				lcy = cy;
 			}
 		}
 	}
+
 	SDL_FreeSurface( tileset );
 	SDL_Quit();
 
