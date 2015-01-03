@@ -1,12 +1,16 @@
 /* Core Editor - By Koen van Vliet <8by8mail@gmail.com>
  * World editor for Hero Core ti83+ port.
  */
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <unistd.h>
+
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
 #include "SDL/SDL_ttf.h"
-#include <string>
+
 #include "cedit.h"
 
 
@@ -21,14 +25,13 @@ const int SET_WIDTH = 8;
 const int SET_HEIGHT = 8;
 
 int VIEW_WIDTH = 3;
-int VIEW_HEIGHT = 4;
+int VIEW_HEIGHT = 3;
 
 int SCREEN_WIDTH;
 int SCREEN_HEIGHT;
 const int SCREEN_BPP = 32;
 
 SDL_Surface *screen = NULL;
-SDL_Surface *tileset = NULL;
 
 SDL_Rect tile_clip( int ix )
 {
@@ -62,7 +65,7 @@ void apply_surface(int x, int y, SDL_Surface* source, SDL_Surface* destination, 
 	SDL_BlitSurface(source, clip, destination, &offset);
 }
 
-void draw_tile( int x, int y, int ix )
+void draw_tile( int x, int y, int ix, SDL_Surface *tileset )
 {
 	SDL_Rect tilec = ::tile_clip( ix );
 	apply_surface( x * GRID, y * GRID, tileset, screen, &tilec );
@@ -86,14 +89,14 @@ bool Block::get_rel_xy( int cx, int cy, Coord *t )
 	return false;
 }
 
-bool Block::tile_place( int cx, int cy, int ix)
+bool Block::tile_place( int cx, int cy, int ix, SDL_Surface *tileset )
 {
 	Coord t;
 
 	if ( get_rel_xy( cx, cy, &t ) )
 	{
-		*( buff + t.y * ROOM_WIDTH + t.x ) = ix;
-		::draw_tile( t.x + x, t.y + y, ix );
+		*( buff + t.y * w + t.x ) = ix;
+		::draw_tile( t.x + x, t.y + y, ix, tileset );
 		if( SDL_Flip( screen ) == -1 )
 		{
 			return false;
@@ -106,16 +109,16 @@ bool Block::tile_place( int cx, int cy, int ix)
 	return true;
 }
 
-bool Block::draw( int viewx, int viewy)
+bool Block::draw( int viewx, int viewy, SDL_Surface *tileset )
 {
 	int xx, yy;
 	char tile;
-	for( yy = 0; yy < ROOM_HEIGHT; yy++ )
+	for( yy = 0; yy < h; yy++ )
 	{
-		for( xx = 0; xx < ROOM_WIDTH; xx++ )
+		for( xx = 0; xx < w; xx++ )
 		{
-			tile = *(buff + ( ROOM_WIDTH * yy + xx ) );
-			::draw_tile( xx + x, yy + y, tile );
+			tile = *(buff + ( w * yy + xx ) );
+			::draw_tile( xx + x, yy + y, tile, tileset );
 		}
 	}
 	return true;
@@ -132,7 +135,9 @@ int main( int argc, char *args[] )
 	bool mdl = false, mdr = false;
 	bool redraw;
 	bool quit = false;
+	char *buffer = NULL;
 	char *tilemap = NULL;
+	char *worldmap = NULL;
 	int rx, ry;
 	int buffer_size;
 	Block b_room[VIEW_WIDTH][VIEW_HEIGHT];
@@ -147,8 +152,9 @@ int main( int argc, char *args[] )
 
 	SDL_Surface *background = NULL;
 	SDL_Surface *arrows = NULL;
+	SDL_Surface *tileset = NULL;
 	SDL_Rect arrow_u = { 0, 0, 32, 14 };
-	SDL_Rect arrow_d = { 0, 34, 32, 14 };
+	SDL_Rect arrow_d = { 0, 33, 32, 14 };
 	SDL_Rect arrow_l = { 0, 14, 16, 20 };
 	SDL_Rect arrow_r = { 16, 14, 16, 20 };
 
@@ -163,13 +169,16 @@ int main( int argc, char *args[] )
 		VIEW_HEIGHT = WORLD_HEIGHT;
 	}
 
-	SCREEN_WIDTH = ROOM_WIDTH * VIEW_WIDTH + SET_WIDTH + 2;
+	SCREEN_WIDTH = ROOM_WIDTH * VIEW_WIDTH + std::max( SET_WIDTH + 2, WORLD_WIDTH ) + 3;
 	SCREEN_HEIGHT = ROOM_HEIGHT * VIEW_HEIGHT + 2;
 
 	buffer_size = ROOM_WIDTH * ROOM_HEIGHT * WORLD_WIDTH * WORLD_HEIGHT;
-	tilemap = (char *)calloc( buffer_size, sizeof(char) );
+	buffer = (char *)calloc( buffer_size + 2, sizeof(char) );
+	tilemap = buffer + 2;
 
-	if( tilemap == NULL)
+	worldmap = (char *)calloc( WORLD_WIDTH * WORLD_HEIGHT, sizeof(char) );
+
+	if( tilemap == NULL || worldmap == NULL )
 	{
 		std::cout << "Error: Could not allocate memory\n";
 		return 1;
@@ -181,14 +190,14 @@ int main( int argc, char *args[] )
 		return 1;
 	}
 
+	SDL_WM_SetIcon( IMG_Load("icon.bmp"), NULL );
+
 	screen = SDL_SetVideoMode( SCREEN_WIDTH * GRID, SCREEN_HEIGHT * GRID, SCREEN_BPP, SDL_SWSURFACE);
 	
 	if( screen == NULL )
 	{
 		return 1;
 	}
-
-	SDL_WM_SetCaption( "Core Editor - By Koen van Vliet", NULL);
 
 	/* Load assets */
 	tileset = load_image( "tileset.bmp" );
@@ -201,13 +210,14 @@ int main( int argc, char *args[] )
 	}
 
 	/* Load buffer from file file */
-	std::ifstream inFile( "data.bin", std::ifstream::out | std::ifstream::binary );
+	std::ifstream inFile( ".autosave.core", std::ifstream::out | std::ifstream::binary );
 	if (inFile != NULL)
 	{
  		inFile.read( tilemap, buffer_size );
+ 		inFile.close();
 	}
 
-
+	SDL_WM_SetCaption( "Core Editor - By Koen van Vliet", NULL);
 	/* Editor
 	 * - Initialize editor
 	 * - Handle events
@@ -237,16 +247,16 @@ int main( int argc, char *args[] )
 
 	b_picker = {
 		NULL,
-		SCREEN_WIDTH - ( SET_WIDTH ),
+		SCREEN_WIDTH - std::max( SET_WIDTH + 2, WORLD_WIDTH ) - 1,
 		1,
 		SET_WIDTH,
 		SET_HEIGHT
 	};
 
 	b_map = {
-		NULL,
-		SCREEN_WIDTH - WORLD_WIDTH,
-		( SET_HEIGHT + 1 ),
+		worldmap,
+		SCREEN_WIDTH - std::max( SET_WIDTH + 2, WORLD_WIDTH ) - 1,
+		( SET_HEIGHT + 2 ),
 		WORLD_WIDTH,
 		WORLD_HEIGHT
 	};
@@ -301,6 +311,18 @@ int main( int argc, char *args[] )
 	{
 		if ( redraw )
 		{
+			SDL_Rect worldc = {
+				b_map.x * GRID - 1,
+				b_map.y * GRID - 1,
+				WORLD_WIDTH * GRID + 1,
+				WORLD_HEIGHT * GRID + 1
+			};
+			SDL_Rect viewc = {
+				( b_map.x + view_x ) * GRID - 1,
+				( b_map.y + view_y ) * GRID - 1,
+				VIEW_WIDTH * GRID + 1,
+				VIEW_HEIGHT * GRID + 1
+			};
 			redraw = false;
 			for( y = 0; y < VIEW_HEIGHT; y++ )
 			{
@@ -308,15 +330,19 @@ int main( int argc, char *args[] )
 				{
 					b_room[x][y].buff = tilemap + ROOM_WIDTH * ROOM_HEIGHT * ( WORLD_WIDTH * ( view_y + y ) + view_x + x );
 					apply_surface(b_room[x][y].x * GRID, b_room[x][y].y * GRID, background, screen );
-					b_room[x][y].draw( view_x, view_y );
+					b_room[x][y].draw( view_x, view_y, tileset );
 				}
 			}
+			SDL_FillRect( screen, &worldc, SDL_MapRGB( screen->format, 0x00, 0x00, 0x00 ) );
+			SDL_FillRect( screen, &viewc, SDL_MapRGB( screen->format, 0xFF, 0xFF, 0xFF ) ); 
+			b_map.draw( 0, 0, tileset );
 			if( SDL_Flip( screen ) == -1 )
 			{
 				std::cout << "Error updating screen!\n";
 				return 1;
 			}
 		}
+		
 		while( SDL_PollEvent( &event ) )
 		{
 			cx = event.button.x / GRID;
@@ -326,7 +352,6 @@ int main( int argc, char *args[] )
 				/* Select tile */
 				if( event.button.button == SDL_BUTTON_LEFT )
 				{
-					Coord t;
 					mdl = true;
 					if( cx == 0 )
 					{
@@ -360,13 +385,6 @@ int main( int argc, char *args[] )
 							view_y ++;
 						}
 					}
-					
-					if( cx != lcx || cy != lcy ){
-						if( b_picker.get_rel_xy( cx, cy, &t ) )
-						{
-							tile = t.i;
-						}
-					}
 				}
 				else if( event.button.button == SDL_BUTTON_RIGHT )
 				{
@@ -394,6 +412,7 @@ int main( int argc, char *args[] )
 			{
 				Coord txy;
 				int tid, offs;
+				Coord t;
 
 				if ( event.button.button == SDL_BUTTON_LEFT )
 				{
@@ -408,11 +427,29 @@ int main( int argc, char *args[] )
 				ry = ( cy - b_room[0][0].y ) / ROOM_HEIGHT;
 				if (rx >= 0 && rx < VIEW_WIDTH && ry >= 0 && ry < VIEW_HEIGHT)
 				{
-					if ( b_room[rx][ry].tile_place( cx, cy, tid ) )
+					if ( b_room[rx][ry].tile_place( cx, cy, tid, tileset ) )
 					{
-						std::cout << "Tile placed in room[" << rx << ", " << ry << "]\n";
+						// Succesfully placed tile
 					}
 				}
+
+				if( b_picker.get_rel_xy( cx, cy, &t ) )
+					{
+						tile = t.i;
+						draw_tile( b_picker.x + SET_WIDTH + 1, b_picker.y, t.i, tileset );
+						if( SDL_Flip( screen ) == -1 )
+						{
+							std::cout << "Error updating screen!\n";
+							return 1;
+						}
+						std::cout << "Picked tile with id " << tile << ".\n";
+					}
+				if( b_map.get_rel_xy( cx, cy, &t ) ){
+					redraw = true;
+					view_x = std::min( std::max( t.x - 1, 0 ) , WORLD_WIDTH - VIEW_WIDTH );
+					view_y = std::min( std::max( t.y - 1, 0 ), WORLD_HEIGHT - VIEW_HEIGHT );
+				}
+
 				lcx = cx;
 				lcy = cy;
 			}
@@ -423,9 +460,23 @@ int main( int argc, char *args[] )
 	SDL_Quit();
 
 	/* Save buffer to file */
-	std::ofstream outFile( "data.bin", std::ofstream::out | std::ofstream::binary );
+	std::ofstream outFile( ".autosave.core", std::ofstream::out | std::ofstream::binary );
 	outFile.write( tilemap, buffer_size );
-
-	free(tilemap);
+	outFile.close();
+	std::ofstream exportFile( "out.cedit", std::ofstream::out | std::ofstream::binary );
+	exportFile.write( buffer, buffer_size + 2 );
+	exportFile.close();
+	char* args_to8xv[] = {
+		"to8xv",
+		"out.cedit",
+		"Untitled_Hero_Core_Tilemap.8xv",
+		"HCMT"
+	};
+	if( execv( "to8xv", args_to8xv ) == -1 )
+	{
+		std::cout << "Warning: Could not convert to appvar.";
+		return 1;
+	}
+	free(buffer);
 	return 0;
 }
