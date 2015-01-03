@@ -1,18 +1,7 @@
 /* Core Editor - By Koen van Vliet <8by8mail@gmail.com>
  * World editor for Hero Core ti83+ port.
  */
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <unistd.h>
-
-#include "SDL/SDL.h"
-#include "SDL/SDL_image.h"
-#include "SDL/SDL_ttf.h"
-
 #include "cedit.h"
-
 
 const int GRID = 16;
 
@@ -21,8 +10,8 @@ const int WORLD_HEIGHT = 8;
 const int ROOM_WIDTH = 11;
 const int ROOM_HEIGHT = 8;
 
-const int SET_WIDTH = 8;
-const int SET_HEIGHT = 8;
+const int SET_WIDTH = 16;
+const int SET_HEIGHT = 4;
 
 int VIEW_WIDTH = 3;
 int VIEW_HEIGHT = 3;
@@ -33,14 +22,14 @@ const int SCREEN_BPP = 32;
 
 SDL_Surface *screen = NULL;
 
-SDL_Rect tile_clip( int ix )
+SDL_Rect tile_clip( int ix, int w = 1 )
 {
 	SDL_Rect tilec;
 
 	tilec.x = ( ix % SET_WIDTH ) * GRID;
 	tilec.y = ( ix / SET_WIDTH ) * GRID;
-	tilec.w = GRID - 1;
-	tilec.h = GRID - 1;
+	tilec.w = GRID - w;
+	tilec.h = GRID - w;
 
 	return tilec;
 }
@@ -153,6 +142,7 @@ int main( int argc, char *args[] )
 	SDL_Surface *background = NULL;
 	SDL_Surface *arrows = NULL;
 	SDL_Surface *tileset = NULL;
+	SDL_Surface *tileset_mapscreen = NULL;
 	SDL_Rect arrow_u = { 0, 0, 32, 14 };
 	SDL_Rect arrow_d = { 0, 33, 32, 14 };
 	SDL_Rect arrow_l = { 0, 14, 16, 20 };
@@ -175,7 +165,8 @@ int main( int argc, char *args[] )
 	buffer_size = ROOM_WIDTH * ROOM_HEIGHT * WORLD_WIDTH * WORLD_HEIGHT;
 	buffer = (char *)calloc( buffer_size + 2, sizeof(char) );
 	tilemap = buffer + 2;
-
+	*( buffer ) = (char)SCREEN_WIDTH;
+	*( buffer + 1 ) = (char)SCREEN_HEIGHT;
 	worldmap = (char *)calloc( WORLD_WIDTH * WORLD_HEIGHT, sizeof(char) );
 
 	if( tilemap == NULL || worldmap == NULL )
@@ -203,7 +194,8 @@ int main( int argc, char *args[] )
 	tileset = load_image( "tileset.bmp" );
 	background = load_image( "background.bmp" );
 	arrows = load_image( "arrows.bmp" );
-	if( tileset == NULL || background == NULL || arrows == NULL )
+	tileset_mapscreen = load_image( "tileset_mapscreen.png" );
+	if( tileset == NULL || background == NULL || arrows == NULL || tileset_mapscreen == NULL )
 	{
 		std::cout << "Error loading image files.\n";
 		return 1;
@@ -218,10 +210,6 @@ int main( int argc, char *args[] )
 	}
 
 	SDL_WM_SetCaption( "Core Editor - By Koen van Vliet", NULL);
-	/* Editor
-	 * - Initialize editor
-	 * - Handle events
-	 */
 
 	/* Initialize editor
 	 * - Create all editor blocks
@@ -335,7 +323,7 @@ int main( int argc, char *args[] )
 			}
 			SDL_FillRect( screen, &worldc, SDL_MapRGB( screen->format, 0x00, 0x00, 0x00 ) );
 			SDL_FillRect( screen, &viewc, SDL_MapRGB( screen->format, 0xFF, 0xFF, 0xFF ) ); 
-			b_map.draw( 0, 0, tileset );
+			b_map.draw( 0, 0, tileset_mapscreen );
 			if( SDL_Flip( screen ) == -1 )
 			{
 				std::cout << "Error updating screen!\n";
@@ -446,7 +434,7 @@ int main( int argc, char *args[] )
 					}
 				if( b_map.get_rel_xy( cx, cy, &t ) ){
 					redraw = true;
-					view_x = std::min( std::max( t.x - 1, 0 ) , WORLD_WIDTH - VIEW_WIDTH );
+					view_x = std::min( std::max( t.x - 1, 0 ), WORLD_WIDTH - VIEW_WIDTH );
 					view_y = std::min( std::max( t.y - 1, 0 ), WORLD_HEIGHT - VIEW_HEIGHT );
 				}
 
@@ -467,10 +455,10 @@ int main( int argc, char *args[] )
 	exportFile.write( buffer, buffer_size + 2 );
 	exportFile.close();
 	char* args_to8xv[] = {
-		"to8xv",
-		"out.cedit",
-		"Untitled_Hero_Core_Tilemap.8xv",
-		"HCMT"
+		(char *)"to8xv",
+		(char *)"out.cedit",
+		(char *)"Untitled_Hero_Core_Tilemap.8xv",
+		(char *)"HCMT"
 	};
 	if( execv( "to8xv", args_to8xv ) == -1 )
 	{
