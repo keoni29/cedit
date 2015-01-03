@@ -210,7 +210,7 @@ int main( int argc, char *args[] )
 	}
 
 	/* Load buffer from file file */
-	std::ifstream inFile( ".autosave.core", std::ifstream::out | std::ifstream::binary );
+	std::ifstream inFile( "autosave.core", std::ifstream::out | std::ifstream::binary );
 	if (inFile != NULL)
 	{
  		inFile.read( tilemap, buffer_size );
@@ -460,7 +460,7 @@ int main( int argc, char *args[] )
 	SDL_Quit();
 
 	/* Save buffer to file */
-	std::ofstream outFile( ".autosave.core", std::ofstream::out | std::ofstream::binary );
+	std::ofstream outFile( "autosave.core", std::ofstream::out | std::ofstream::binary );
 	outFile.write( tilemap, buffer_size );
 	outFile.close();
 	std::ofstream exportFile( "out.cedit", std::ofstream::out | std::ofstream::binary );
