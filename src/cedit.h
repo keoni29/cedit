@@ -2,17 +2,6 @@
 #ifndef EDITOR_
 
 #define EDITOR_
-
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <unistd.h>
-
-#include "SDL/SDL.h"
-#include "SDL/SDL_image.h"
-#include "SDL/SDL_ttf.h"
-
 typedef struct
 {
 	int x;

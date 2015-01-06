@@ -11,10 +11,11 @@
  * 2: Functions for loading images and drawing graphics to the screen
  * 3: Editor block object functions
  * 4: Main
- * 4,1: Initialize graphics subsystem, editor and load images
- * 4,2: Draw various static graphical elements on screen 
+ * 4,1: Process command-line options
+ * 4,2: Initialize graphics subsystem, editor and load images
  * 4,3: Load buffer from autosave file
- * 4,4: Handle events
+ * 4,4: Draw various static graphical elements on screen 
+ * 4,5: Handle events
  *		- Navigation
  *		- Placing tiles
  *		- Removing tiles
@@ -25,7 +26,21 @@
  */
 
 /* 1: Include files */
+#include <algorithm>
+#include <fstream>
+#include <getopt.h>
+#include <iostream>
+#include <string>
+#include <unistd.h>
+#include <stdlib.h>
+
+#include "SDL/SDL.h"
+#include "SDL/SDL_image.h"
+#include "SDL/SDL_ttf.h"
+
 #include "cedit.h"
+
+#define _FILE_VERSION 1
 
 // Yet to fix this global
 int GRID;
@@ -140,6 +155,11 @@ int main( int argc, char *args[] )
 	char *tilemap = NULL;
 	char *worldmap = NULL;
 
+	char *inFileName = NULL;
+	char *outFileName = NULL;
+	char *exportFileName = NULL;
+	char *varName = NULL;
+
 	const int SCREEN_BPP = 32;
 
 	int buffer_size;
@@ -151,16 +171,20 @@ int main( int argc, char *args[] )
 	int x, y;
 
 	GRID = 16;
-	int ROOM_WIDTH = 11;
-	int ROOM_HEIGHT = 8;
-	int SCREEN_WIDTH;
-	int SCREEN_HEIGHT;
+	int VERSION = _FILE_VERSION;
+	int ROOM_WIDTH = 0;
+	int ROOM_HEIGHT = 0;
+	int VIEW_WIDTH = 0;
+	int VIEW_HEIGHT = 0;
+	int WORLD_WIDTH = 0;
+	int WORLD_HEIGHT = 0;
+
 	int SET_WIDTH;
 	int SET_HEIGHT;
-	int VIEW_WIDTH = 3;
-	int VIEW_HEIGHT = 3;
-	int WORLD_WIDTH = 9;
-	int WORLD_HEIGHT = 8;
+	int SCREEN_WIDTH;
+	int SCREEN_HEIGHT;
+
+	int header_size = 200;
 
 	SDL_Event event;
 	SDL_Rect arrow_d;
@@ -174,11 +198,73 @@ int main( int argc, char *args[] )
 	SDL_Surface *tileset_mapscreen = NULL;
 	SDL_Surface *screen = NULL;
 
-	/* 4,1: Initialize graphics subsystem, editor and load images */
-	VIEW_WIDTH = std::min( WORLD_WIDTH, VIEW_WIDTH );
-	VIEW_HEIGHT = std::min( WORLD_HEIGHT, VIEW_HEIGHT );
+/*
+	7 size parameters,
+	-g=??    (2-255)
+	-r=??x?? (1-255)
+	-w=??x?? (1-255)
+	-v=??x?? (1-255)
+	4 name parameters
+	-i=?? (max 32 long)
+	-o=?? (max 32 long)
+	-e=?? (max 32 long)
+	-v=?? (max 8 long)
+*/
+	
+	/* 4,1: Process command-line options */
+	char option_char;
+	while( ( option_char = getopt( argc, args, "i:o:a:e:f:r:R:w:W:v:V:" ) ) != -1 )
+	{
+		switch( option_char )
+		{
+			case 'i': inFileName = optarg; break;
+			case 'o': outFileName = optarg; break;
+			case 'a': varName = optarg; break;
+			case 'e': exportFileName = optarg; break;
 
-	Block b_room[VIEW_WIDTH][VIEW_HEIGHT];
+			case 'g': GRID = atoi( optarg ); break;
+			case 'r': ROOM_WIDTH = atoi( optarg ); break;
+			case 'R': ROOM_HEIGHT = atoi( optarg ); break;
+			case 'w': WORLD_WIDTH = atoi( optarg ); break;
+			case 'W': WORLD_HEIGHT = atoi( optarg ); break;
+			case 'v': VIEW_WIDTH = atoi( optarg ); break;
+			case 'V': VIEW_HEIGHT = atoi( optarg ); break;
+
+			case '?': std::cout << "Usage : " << args[0] << "[OPTIONS] -o outfile.core" << ".\n" 
+								<< "-i filename\tLoad file\n"
+								<< "-o filename\tSave file"
+								<< "-e filename\tExport name"
+								<< "-a name\tAppvar name\n"
+								<< "\n"
+								<< "-g size(2-255)\tGrid size in pixels\n"
+								<< "-r room_width(1-255)\tSet room width\n"
+								<< "[-R room_height(1-255)\tSet room height]\n"
+								<< "-w world_width(1-255)\tSet world width\n"
+								<< "[-W world_height(1-255)\tSet world height]\n"
+								<< "-v view_width(1-255)\tSet view width\n"
+								<< "[-V view_height(1-255)\tSet view height]\n";
+								return 1;
+		}
+	}
+
+	if( inFileName == NULL )
+	{
+		if( ROOM_WIDTH == 0 )
+		{
+			ROOM_WIDTH = 11;
+			ROOM_HEIGHT = 8;
+			std::cout << "Room width not specified. Using defaults:" << ROOM_WIDTH << " x " << ROOM_HEIGHT << ".\n";
+		}
+
+		if( WORLD_WIDTH == 0 )
+		{
+			WORLD_WIDTH = 9;
+			WORLD_HEIGHT = 8;
+			std::cout << "World width not specified. Using default world size:" << WORLD_WIDTH << " x " << WORLD_HEIGHT << ".\n";
+		}
+	}
+	
+	/* 4,2: Initialize graphics subsystem, editor and load images */
 
 	if ( SDL_Init( SDL_INIT_EVERYTHING ) == -1 )
 	{
@@ -197,20 +283,68 @@ int main( int argc, char *args[] )
 		return 1;
 	}
 
-	SCREEN_WIDTH = ROOM_WIDTH * VIEW_WIDTH + std::max( SET_WIDTH + 2, WORLD_WIDTH ) + 3;
-	SCREEN_HEIGHT = ROOM_HEIGHT * VIEW_HEIGHT + 2;
+	/* 4,3: Load buffer from file */
+	std::ifstream inFile( inFileName, std::ifstream::out | std::ifstream::binary );
+	if( inFileName != NULL )
+	{
+		buffer = (char *)calloc( header_size, sizeof(char) );
+		if( buffer == NULL )
+		{
+			std::cout << "Error: Cound not allocate memory.\n";
+			return 1;
+		}
+
+		if (inFile != NULL)
+		{
+	 		inFile.read( buffer, header_size );
+		}
+		VERSION = *( buffer );
+		GRID = *( buffer + 1 );
+		ROOM_WIDTH = *( buffer + 2 );
+		ROOM_HEIGHT = *( buffer + 3 );
+		WORLD_WIDTH = *( buffer + header_size - 2 );
+		WORLD_HEIGHT = *( buffer + header_size - 1 );
+		free(buffer);
+	}
+	
+	if( VIEW_WIDTH == 0 )
+	{
+		VIEW_WIDTH = std::min( WORLD_WIDTH, 3 );
+		VIEW_HEIGHT = std::min( WORLD_HEIGHT, 3 );
+		std::cout << "View width not specified. Using default view size:" << VIEW_WIDTH << " x " << VIEW_HEIGHT << ".\n";
+	}
 
 	// Reserve memory for the world editor and the map screen
-	buffer_size = ROOM_WIDTH * ROOM_HEIGHT * WORLD_WIDTH * WORLD_HEIGHT;
-	buffer = (char *)calloc( buffer_size + 2, sizeof(char) );
-	tilemap = buffer + 2;
-	*( buffer ) = (char)WORLD_WIDTH;
-	*( buffer + 1 ) = (char)WORLD_HEIGHT;
-	worldmap = (char *)calloc( WORLD_WIDTH * WORLD_HEIGHT, sizeof(char) );
+	Block b_room[VIEW_WIDTH][VIEW_HEIGHT];
 
-	if( tilemap == NULL || worldmap == NULL )
+	buffer_size = ROOM_WIDTH * ROOM_HEIGHT * WORLD_WIDTH * WORLD_HEIGHT;
+	buffer = (char *)calloc( buffer_size + header_size, sizeof(char) );
+	worldmap = (char *)calloc( WORLD_WIDTH * WORLD_HEIGHT, sizeof(char) );
+	tilemap = buffer + header_size;
+
+	if( inFile != NULL )
 	{
-		std::cout << "Error: Could not allocate memory\n";
+		inFile.read( tilemap, buffer_size );
+		inFile.close();
+	}
+
+	VIEW_WIDTH = std::min( WORLD_WIDTH, VIEW_WIDTH );
+	VIEW_HEIGHT = std::min( WORLD_HEIGHT, VIEW_HEIGHT );
+
+	std::cout << "GRID_SIZE = " << GRID << " * " << GRID << " pixels\n";
+	std::cout << "ROOM_WIDTH = " << ROOM_WIDTH << " tiles\n";
+	std::cout << "ROOM_HEIGHT = " << ROOM_HEIGHT << " tiles\n";
+	std::cout << "WORLD_WIDTH = " << WORLD_WIDTH << " rooms\n";
+	std::cout << "WORLD_HEIGHT = " << WORLD_HEIGHT << " rooms\n";
+	std::cout << "VIEW_WIDTH = " << VIEW_WIDTH << " rooms\n";
+	std::cout << "VIEW_HEIGHT = " << VIEW_HEIGHT << " rooms\n";
+
+	SCREEN_WIDTH = ROOM_WIDTH * VIEW_WIDTH + std::max( SET_WIDTH + 2, WORLD_WIDTH ) + 3;
+	SCREEN_HEIGHT = std::max( ROOM_HEIGHT * VIEW_HEIGHT, SET_HEIGHT + 1 + WORLD_HEIGHT ) + 2;
+
+	if( buffer == NULL || tilemap == NULL || worldmap == NULL )
+	{
+		std::cout << "Error: Could not allocate memory.\n";
 		return 1;
 	}
 
@@ -246,6 +380,7 @@ int main( int argc, char *args[] )
 	{
 		for( x = 0; x < VIEW_WIDTH; x++ )
 		{
+			std::cout << "Spawning editor window at [" << x << ", " << y << "]\n";
 			b_room[x][y] = {
 				NULL,
 				x * ROOM_WIDTH + 1,
@@ -289,7 +424,7 @@ int main( int argc, char *args[] )
 		VIEW_HEIGHT * GRID + 1
 	};
 
-	/* 4,2: Draw various static graphical elements on screen */
+	/* 4,4: Draw various static graphical elements on screen */
 	apply_surface(b_picker.x * GRID, b_picker.y * GRID, tileset, screen );
 
 	arrow_u = { 0, 0, 32, 14 };
@@ -335,14 +470,6 @@ int main( int argc, char *args[] )
 		return 1;
 	}
 
-	/* 4,3: Load buffer from autosave file */
-	std::ifstream inFile( "autosave.core", std::ifstream::out | std::ifstream::binary );
-	if (inFile != NULL)
-	{
- 		inFile.read( tilemap, buffer_size );
- 		inFile.close();
-	}
-
 	redraw = true;
 	while( quit == false )
 	{
@@ -375,7 +502,7 @@ int main( int argc, char *args[] )
 			}
 		}
 
-		/* Handle events and perform actions such as placing tiles
+		/* 4,5 Handle events and perform actions such as placing tiles
 		 * changing the view coordinates etc.
 		 */
 		while( SDL_PollEvent( &event ) )
@@ -387,6 +514,20 @@ int main( int argc, char *args[] )
 				if( event.button.button == SDL_BUTTON_LEFT )
 				{
 					mdl = true;
+					Coord t;
+
+					// Pick tiles from set
+					if( b_picker.get_rel_xy( cx, cy, &t ) )
+					{
+						tile = t.i;
+						draw_tile( b_picker.x + SET_WIDTH + 1, b_picker.y, t.i, tileset, screen );
+						if( SDL_Flip( screen ) == -1 )
+						{
+							std::cout << "Error updating screen!\n";
+							return 1;
+						}
+						std::cout << "Picked tile with id " << tile << ".\n";
+					}
 
 					/* Scrolling trough the world when clicked 1 tile outside of the room editor */
 					if( cx == 0 )
@@ -470,24 +611,13 @@ int main( int argc, char *args[] )
 					}
 				}
 
-				if( b_picker.get_rel_xy( cx, cy, &t ) )
-				{
-					tile = t.i;
-					draw_tile( b_picker.x + SET_WIDTH + 1, b_picker.y, t.i, tileset, screen );
-					if( SDL_Flip( screen ) == -1 )
-					{
-						std::cout << "Error updating screen!\n";
-						return 1;
-					}
-					std::cout << "Picked tile with id " << tile << ".\n";
-				}
 				if( b_map.get_rel_xy( cx, cy, &t ) )
 				{
 					if( event.button.button == SDL_BUTTON_LEFT )
 					{
 						redraw = true;
-						view_x = std::min( std::max( t.x - (VIEW_WIDTH / 2), 0 ), WORLD_WIDTH - VIEW_WIDTH );
-						view_y = std::min( std::max( t.y - (VIEW_WIDTH / 2), 0 ), WORLD_HEIGHT - VIEW_HEIGHT );
+						view_x = std::min( std::max( t.x - ( VIEW_WIDTH / 2 ), 0 ), WORLD_WIDTH - VIEW_WIDTH );
+						view_y = std::min( std::max( t.y - ( VIEW_HEIGHT / 2 ), 0 ), WORLD_HEIGHT - VIEW_HEIGHT );
 					}
 				}
 
@@ -503,25 +633,43 @@ int main( int argc, char *args[] )
 	SDL_FreeSurface( tileset_mapscreen );
 	SDL_Quit();
 
-	/* 4,6: Save buffer to autosave file */
+	/* 4,6: Save buffer to file */
+	if( outFileName == NULL || sizeof( outFileName ) <= 1 )
+	{
+		outFileName = (char *)"autosave.core";
+	}
+
+	if( varName == NULL || sizeof( varName ) <= 1 )
+	{
+		outFileName = (char *)"autosave.core";
+	}
+	*( buffer ) = VERSION;
+	*( buffer + 1 ) = (char)GRID;
+	*( buffer + 2 ) = (char)ROOM_WIDTH;
+	*( buffer + 3 ) = (char)ROOM_HEIGHT;
+	*( buffer + header_size - 2 ) = (char)WORLD_WIDTH;
+	*( buffer + header_size - 1 ) = (char)WORLD_HEIGHT;
 	std::ofstream outFile( "autosave.core", std::ofstream::out | std::ofstream::binary );
-	outFile.write( tilemap, buffer_size );
+	outFile.write( buffer, buffer_size + header_size );
 	outFile.close();
 
 	/* 4,7: Export to 8xv */
-	std::ofstream exportFile( "out.cedit", std::ofstream::out | std::ofstream::binary );
-	exportFile.write( buffer, buffer_size + 2 );
-	exportFile.close();
-	char* args_to8xv[] = {
-		(char *)"to8xv",
-		(char *)"out.cedit",
-		(char *)"Untitled_Hero_Core_Tilemap.8xv",
-		(char *)"HCMT"
-	};
-	if( execv( "to8xv", args_to8xv ) == -1 )
+	if( exportFileName != NULL )
 	{
-		std::cout << "Warning: Could not convert to appvar.";
-		return 1;
+		std::ofstream exportFile( "out.cedit", std::ofstream::out | std::ofstream::binary );
+		exportFile.write( tilemap - 2 , buffer_size + 2 );
+		exportFile.close();
+		char* args_to8xv[] = {
+			(char *)"to8xv",
+			outFileName,
+			exportFileName,
+			varName,
+		};
+		if( execv( "to8xv", args_to8xv ) == -1 )
+		{
+			std::cout << "Warning: Could not convert to appvar.";
+			return 1;
+		}
 	}
 	free(buffer);
 	return 0;
