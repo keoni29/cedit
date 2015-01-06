@@ -42,6 +42,9 @@
 
 #define _FILE_VERSION 1
 
+const SDL_Color c_white = { 0xFF, 0xFF, 0xFF };
+const SDL_Color c_black = { 0x00, 0x00, 0x00 };
+
 // Yet to fix this global
 int GRID;
 
@@ -64,6 +67,40 @@ void apply_surface(int x, int y, SDL_Surface* source, SDL_Surface* destination, 
 	offset.x = x;
 	offset.y = y;
 	SDL_BlitSurface(source, clip, destination, &offset);
+}
+
+void draw_rectangle( int x, int y, int w, int h, SDL_Color c, SDL_Surface *screen )
+{
+	SDL_Rect r[4];
+	int i;
+	r[0] = { 
+		x * GRID,
+		y * GRID,
+		w * GRID,
+		1
+	};
+	r[1] = {
+		x * GRID,
+		( y + h ) * GRID - 1 ,
+		w * GRID,
+		1
+	};
+	r[2] = {
+		x * GRID,
+		y * GRID,
+		1,
+		h * GRID
+	};
+	r[3] = {
+		( x + w ) * GRID - 1,
+		y * GRID,
+		1,
+		h * GRID
+	};
+	for( i = 0; i < sizeof(r) / sizeof(*r); i++ )
+	{
+		SDL_FillRect( screen, &r[i], SDL_MapRGB( screen->format, c.r, c.g, c.b ) );
+	}
 }
 
 void draw_tile( int x, int y, int ix, SDL_Surface *tileset, SDL_Surface *screen )
@@ -159,6 +196,7 @@ int main( int argc, char *args[] )
 	char *outFileName = NULL;
 	char *exportFileName = NULL;
 	char *varName = NULL;
+	char *tilesetFileName = NULL;
 
 	const int SCREEN_BPP = 32;
 
@@ -213,7 +251,7 @@ int main( int argc, char *args[] )
 	
 	/* 4,1: Process command-line options */
 	char option_char;
-	while( ( option_char = getopt( argc, args, "i:o:a:e:f:r:R:w:W:v:V:" ) ) != -1 )
+	while( ( option_char = getopt( argc, args, "i:o:a:e:t:f:g:r:R:w:W:v:V:?h" ) ) != -1 )
 	{
 		switch( option_char )
 		{
@@ -221,6 +259,7 @@ int main( int argc, char *args[] )
 			case 'o': outFileName = optarg; break;
 			case 'a': varName = optarg; break;
 			case 'e': exportFileName = optarg; break;
+			case 't': tilesetFileName = optarg; break;
 
 			case 'g': GRID = atoi( optarg ); break;
 			case 'r': ROOM_WIDTH = atoi( optarg ); break;
@@ -230,19 +269,21 @@ int main( int argc, char *args[] )
 			case 'v': VIEW_WIDTH = atoi( optarg ); break;
 			case 'V': VIEW_HEIGHT = atoi( optarg ); break;
 
-			case '?': std::cout << "Usage : " << args[0] << "[OPTIONS] -o outfile.core" << ".\n" 
-								<< "-i filename\tLoad file\n"
-								<< "-o filename\tSave file"
-								<< "-e filename\tExport name"
+			case 'h':
+			case '?': std::cout << "Usage: " << args[0] << "[OPTIONS]" << ".\n"
+								<< "-i filename\t\tLoad file\n"
+								<< "-o filename\t\tSave file\n"
+								<< "-e filename\t\tExport name\n"
 								<< "-a name\tAppvar name\n"
+								<< "-t filename\t\tLoad tileset from image\n"
 								<< "\n"
-								<< "-g size(2-255)\tGrid size in pixels\n"
-								<< "-r room_width(1-255)\tSet room width\n"
-								<< "[-R room_height(1-255)\tSet room height]\n"
-								<< "-w world_width(1-255)\tSet world width\n"
-								<< "[-W world_height(1-255)\tSet world height]\n"
-								<< "-v view_width(1-255)\tSet view width\n"
-								<< "[-V view_height(1-255)\tSet view height]\n";
+								<< "-g grid_size\t(2-255)\tGrid size in pixels\n"
+								<< "-r room_width\t(1-255)\tSet room width\n"
+								<< "-R room_height\t(1-255)\tSet room height\n"
+								<< "-w world_width\t(1-255)\tSet world width\n"
+								<< "-W world_height\t(1-255)\tSet world height\n"
+								<< "-v view_width\t(1-255)\tSet view width\n"
+								<< "-V view_height\t(1-255)\tSet view height\n";
 								return 1;
 		}
 	}
@@ -271,16 +312,23 @@ int main( int argc, char *args[] )
 		return 1;
 	}
 
-	tileset = SDL_LoadBMP( "tileset.bmp" );
-
-	SET_WIDTH = tileset->w / GRID;
-	SET_HEIGHT = tileset->h / GRID;
-
-	SDL_FreeSurface( tileset );
+	if( tilesetFileName == NULL )
+	{
+		tilesetFileName = (char *)"tileset.bmp";
+	}
+	tileset = SDL_LoadBMP( tilesetFileName );
 	if( tileset == NULL )
 	{
 		std::cout << "Error loading tileset.\n";
 		return 1;
+	}
+	SET_WIDTH = tileset->w / GRID;
+	SET_HEIGHT = tileset->h / GRID;
+	SDL_FreeSurface( tileset );
+
+	if( SET_WIDTH * SET_HEIGHT > 256 )
+	{
+		std::cout << "Warning: Too many tiles. Try using a smaller image or a smaller grid size!\n";
 	}
 
 	/* 4,3: Load buffer from file */
@@ -358,7 +406,7 @@ int main( int argc, char *args[] )
 	}
 
 	/* Load assets */
-	tileset = load_image( "tileset.bmp" );
+	tileset = load_image( tilesetFileName );
 	arrows = load_image( "arrows.bmp" );
 	tileset_mapscreen = load_image( "tileset_mapscreen.png" );
 	if( tileset == NULL || arrows == NULL || tileset_mapscreen == NULL )
@@ -380,7 +428,6 @@ int main( int argc, char *args[] )
 	{
 		for( x = 0; x < VIEW_WIDTH; x++ )
 		{
-			std::cout << "Spawning editor window at [" << x << ", " << y << "]\n";
 			b_room[x][y] = {
 				NULL,
 				x * ROOM_WIDTH + 1,
@@ -425,8 +472,6 @@ int main( int argc, char *args[] )
 	};
 
 	/* 4,4: Draw various static graphical elements on screen */
-	apply_surface(b_picker.x * GRID, b_picker.y * GRID, tileset, screen );
-
 	arrow_u = { 0, 0, 32, 14 };
 	arrow_d = { 0, 33, 32, 14 };
 	arrow_l = { 0, 14, 16, 20 };
@@ -478,6 +523,11 @@ int main( int argc, char *args[] )
 		{
 			redraw = false;
 
+			// Draw tile picker
+			apply_surface(b_picker.x * GRID, b_picker.y * GRID, tileset, screen );
+			draw_rectangle( b_picker.x + tile % SET_WIDTH, b_picker.y + tile / SET_WIDTH, 1, 1, c_white, screen );
+
+			// Draw world editor
 			for( y = 0; y < VIEW_HEIGHT; y++ )
 			{
 				for( x = 0; x < VIEW_WIDTH; x++ )
@@ -519,6 +569,7 @@ int main( int argc, char *args[] )
 					// Pick tiles from set
 					if( b_picker.get_rel_xy( cx, cy, &t ) )
 					{
+						redraw = true;
 						tile = t.i;
 						draw_tile( b_picker.x + SET_WIDTH + 1, b_picker.y, t.i, tileset, screen );
 						if( SDL_Flip( screen ) == -1 )
