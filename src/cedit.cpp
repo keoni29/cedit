@@ -47,7 +47,7 @@ const SDL_Color c_black = { 0x00, 0x00, 0x00 };
 const int SCREEN_BPP = 32;
 
 // Yet to fix this global
-int GRID;
+int GRID_WIDTH, GRID_HEIGHT;
 
 /* 2: Functions for loading images and drawing graphics to the screen */
 SDL_Surface *load_image( std::string filename)
@@ -76,10 +76,26 @@ void draw_rectangle( int x, int y, int w, int h, SDL_Color c, SDL_Surface *scree
 	int i;
 	SDL_Rect r[4];
 
-	r[0] = { x * GRID, y * GRID, w * GRID, 1 };
-	r[1] = { x * GRID, ( y + h ) * GRID - 1 , w * GRID, 1 };
-	r[2] = { x * GRID, y * GRID, 1, h * GRID };
-	r[3] = { ( x + w ) * GRID - 1, y * GRID, 1, h * GRID };
+	r[0] = { 
+		x * GRID_WIDTH,
+		y * GRID_HEIGHT,
+		w * GRID_WIDTH, 
+		1 };
+	r[1] = {
+		x * GRID_WIDTH,
+		( y + h ) * GRID_HEIGHT - 1,
+		w * GRID_WIDTH, 
+		1 };
+	r[2] = { 
+		x * GRID_WIDTH,
+		y * GRID_HEIGHT,
+		1,
+		h * GRID_HEIGHT };
+	r[3] = { 
+		( x + w ) * GRID_WIDTH - 1, 
+		y * GRID_HEIGHT, 
+		1, 
+		h * GRID_HEIGHT };
 	for( i = 0; i < sizeof(r) / sizeof(*r); i++ )
 	{ SDL_FillRect( screen, &r[i], SDL_MapRGB( screen->format, c.r, c.g, c.b ) ); }
 }
@@ -88,11 +104,11 @@ void draw_tile( int x, int y, int ix, SDL_Surface *tileset, SDL_Surface *screen 
 {
 	SDL_Rect tilec;
 
-	tilec.x = ( ix % (tileset->w / GRID ) ) * GRID;
-	tilec.y = ( ix / (tileset->w / GRID ) ) * GRID;
-	tilec.w = GRID - 1;
-	tilec.h = GRID - 1;
-	apply_surface( x * GRID, y * GRID, tileset, screen, &tilec );
+	tilec.x = ( ix % (tileset->w / GRID_WIDTH ) ) * GRID_WIDTH;
+	tilec.y = ( ix / (tileset->w / GRID_WIDTH ) ) * GRID_HEIGHT;
+	tilec.w = GRID_WIDTH - 1;
+	tilec.h = GRID_HEIGHT - 1;
+	apply_surface( x * GRID_WIDTH, y * GRID_HEIGHT, tileset, screen, &tilec );
 }
 
 /* 3: Editor block object functions */
@@ -139,8 +155,8 @@ bool Block::draw( int viewx, int viewy, SDL_Surface *tileset, bool border = fals
 
 	if(border)
 	{
-		backgc = { x * GRID - 1, y * GRID - 1, w * GRID + 1, h * GRID + 1 };
-		backgic = {	x * GRID, y * GRID, w * GRID - 1, h * GRID - 1 };
+		backgc = { x * GRID_WIDTH - 1, y * GRID_HEIGHT - 1, w * GRID_WIDTH + 1, h * GRID_HEIGHT + 1 };
+		backgic = {	x * GRID_WIDTH, y * GRID_HEIGHT, w * GRID_WIDTH - 1, h * GRID_HEIGHT - 1 };
 		SDL_FillRect( screen, &backgc, SDL_MapRGB( screen->format, 0xFF, 0xFF, 0xFF ) );
 		SDL_FillRect( screen, &backgic, SDL_MapRGB( screen->format, 0x00, 0x00, 0x00 ) );
 	}
@@ -160,7 +176,8 @@ bool Block::draw( int viewx, int viewy, SDL_Surface *tileset, bool border = fals
 int main( int argc, char *args[] )
 {
 	/* 4,1: Process command-line options */
-	bool set_grid = false;
+	bool set_grid_w = false;
+	bool set_grid_h = false;
 	bool set_room_w = false;
 	bool set_room_h = false;
 	bool set_world_w = false;
@@ -180,8 +197,9 @@ int main( int argc, char *args[] )
 	int VIEW_HEIGHT = 2;
 	int WORLD_WIDTH = 6;
 	int WORLD_HEIGHT = 4;
-	GRID = 16;
-	while( ( option_char = getopt( argc, args, "i:o:a:e:t:f:g:r:R:w:W:v:V:?h" ) ) != -1 )
+	GRID_WIDTH = 16;
+	GRID_HEIGHT = 16;
+	while( ( option_char = getopt( argc, args, "i:o:a:e:t:f:g:G:r:R:w:W:v:V:?h" ) ) != -1 )
 	{
 		switch( option_char )
 		{
@@ -191,7 +209,8 @@ int main( int argc, char *args[] )
 			case 'e': exportFileName = optarg; break;
 			case 't': tilesetFileName = optarg; break;
 
-			case 'g': GRID = atoi( optarg ); set_grid = true; break;
+			case 'g': GRID_WIDTH = atoi( optarg ); set_grid_w = true; break;
+			case 'G': GRID_HEIGHT = atoi( optarg ); set_grid_h = true; break;
 			case 'r': ROOM_WIDTH = atoi( optarg ); set_room_w = true; break;
 			case 'R': ROOM_HEIGHT = atoi( optarg ); set_room_h = true; break;
 			case 'w': WORLD_WIDTH = atoi( optarg ); set_world_w = true; break;
@@ -207,7 +226,8 @@ int main( int argc, char *args[] )
 								<< "-a name\tAppvar name\n"
 								<< "-t filename\t\tLoad tileset from image\n"
 								<< "\n"
-								<< "-g grid_size\t(2-255)\tGrid size in pixels\n"
+								<< "-g grid_width\t(2-255)\tSet grid width\n"
+								<< "-G grid_height\t(2-255)\tSet grid height"
 								<< "-r room_width\t(1-255)\tSet room width\n"
 								<< "-R room_height\t(1-255)\tSet room height\n"
 								<< "-w world_width\t(1-255)\tSet world width\n"
@@ -222,8 +242,12 @@ int main( int argc, char *args[] )
 	{
 		if( set_room_w == false && set_room_h )	{ ROOM_WIDTH = ROOM_HEIGHT; }		
 		if( set_room_h == false && set_room_w )	{ ROOM_HEIGHT = ROOM_WIDTH; }
+
 		if( set_world_w == false && set_world_h) { ROOM_WIDTH = ROOM_HEIGHT; }
 		if( set_world_h == false && set_world_w) { ROOM_HEIGHT = ROOM_WIDTH; }
+
+		if( set_grid_w == false && set_grid_h) { GRID_WIDTH = GRID_HEIGHT; }
+		if( set_grid_h == false && set_grid_w) { GRID_HEIGHT = GRID_WIDTH; }
 	}
 	
 	/* 4,2: Initialize graphics subsystem, editor and load images */
@@ -248,8 +272,8 @@ int main( int argc, char *args[] )
 		std::cout << "Error loading tileset.\n";
 		return 1;
 	}
-	SET_WIDTH = tileset->w / GRID;
-	SET_HEIGHT = tileset->h / GRID;
+	SET_WIDTH = tileset->w / GRID_WIDTH;
+	SET_HEIGHT = tileset->h / GRID_HEIGHT;
 	SDL_FreeSurface( tileset );
 	if( SET_WIDTH * SET_HEIGHT > 256 )
 	{
@@ -278,15 +302,16 @@ int main( int argc, char *args[] )
 	 		inFile.read( buffer, header_size );
 		}
 		VERSION = *( buffer );
-		GRID = *( buffer + 1 );
-		ROOM_WIDTH = *( buffer + 2 );
-		ROOM_HEIGHT = *( buffer + 3 );
+		GRID_WIDTH = *( buffer + 1 );
+		GRID_HEIGHT = *( buffer + 2 );
+		ROOM_WIDTH = *( buffer + 3 );
+		ROOM_HEIGHT = *( buffer + 4 );
 		WORLD_WIDTH = *( buffer + header_size - 2 );
 		WORLD_HEIGHT = *( buffer + header_size - 1 );
 		free(buffer);
 	}
 	
-	if( WORLD_WIDTH < 1 || WORLD_HEIGHT < 1 || ROOM_WIDTH < 1 || ROOM_HEIGHT < 1 || GRID < 2 || VIEW_WIDTH < 1 || VIEW_HEIGHT < 1 )
+	if( WORLD_WIDTH < 1 || WORLD_HEIGHT < 1 || ROOM_WIDTH < 1 || ROOM_HEIGHT < 1 || GRID_WIDTH < 2 || GRID_HEIGHT < 2 || VIEW_WIDTH < 1 || VIEW_HEIGHT < 1 )
 	{
 		std::cout << "Error: Invalid dimensions.\n";
 		return 1;
@@ -310,7 +335,7 @@ int main( int argc, char *args[] )
 		inFile.close();
 	}
 
-	std::cout << "GRID_SIZE = " << GRID << " * " << GRID << " pixels\n";
+	std::cout << "GRID_SIZE = " << GRID_WIDTH << " * " << GRID_HEIGHT << " pixels\n";
 	std::cout << "ROOM_WIDTH = " << ROOM_WIDTH << " tiles\n";
 	std::cout << "ROOM_HEIGHT = " << ROOM_HEIGHT << " tiles\n";
 	std::cout << "WORLD_WIDTH = " << WORLD_WIDTH << " rooms\n";
@@ -329,7 +354,7 @@ int main( int argc, char *args[] )
 
 	SDL_WM_SetIcon( IMG_Load("icon.bmp"), NULL );
 
-	screen = SDL_SetVideoMode( SCREEN_WIDTH * GRID, SCREEN_HEIGHT * GRID, SCREEN_BPP, SDL_SWSURFACE);
+	screen = SDL_SetVideoMode( SCREEN_WIDTH * GRID_WIDTH, SCREEN_HEIGHT * GRID_HEIGHT, SCREEN_BPP, SDL_SWSURFACE);
 	
 	if( screen == NULL )
 	{
@@ -395,29 +420,29 @@ int main( int argc, char *args[] )
 	arrow_r = { 16, 14, 16, 20 };
 
 	apply_surface(
-		( ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x + 1 ) * GRID ) / 2 - ( arrow_u.w / 2 ),
-		( b_room[0][0].y - 1 ) * GRID,
+		( ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x + 1 ) * GRID_WIDTH ) / 2 - ( arrow_u.w / 2 ),
+		( b_room[0][0].y - 1 ) * GRID_HEIGHT,
 		arrows,
 		screen,
 		&arrow_u );
 
 	apply_surface(
-		( ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x + 1 ) * GRID ) / 2 - ( arrow_d.w / 2 ),
-		( VIEW_HEIGHT * ROOM_HEIGHT + b_room[0][0].y ) * GRID,
+		( ( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x + 1 ) * GRID_WIDTH ) / 2 - ( arrow_d.w / 2 ),
+		( VIEW_HEIGHT * ROOM_HEIGHT + b_room[0][0].y ) * GRID_HEIGHT,
 		arrows,
 		screen,
 		&arrow_d );
 
 	apply_surface(
-		( b_room[0][0].x - 1 ) * GRID,
-		( ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y + 1 ) * GRID ) / 2 - ( arrow_l.h / 2 ),
+		( b_room[0][0].x - 1 ) * GRID_WIDTH,
+		( ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y + 1 ) * GRID_HEIGHT ) / 2 - ( arrow_l.h / 2 ),
 		arrows,
 		screen,
 		&arrow_l );
 
 	apply_surface(
-		( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x ) * GRID,
-		( ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y + 1 ) * GRID ) / 2 - ( arrow_r.h / 2 ),
+		( ROOM_WIDTH * VIEW_WIDTH + b_room[0][0].x ) * GRID_WIDTH,
+		( ( ROOM_HEIGHT * VIEW_HEIGHT + b_room[0][0].y + 1 ) * GRID_HEIGHT ) / 2 - ( arrow_r.h / 2 ),
 		arrows,
 		screen,
 		&arrow_r );
@@ -448,21 +473,21 @@ int main( int argc, char *args[] )
 				}
 			}
 			// Draw tile picker
-			apply_surface(b_picker.x * GRID, b_picker.y * GRID, tileset, screen );
+			apply_surface(b_picker.x * GRID_WIDTH, b_picker.y * GRID_HEIGHT, tileset, screen );
 			draw_rectangle( b_picker.x + tile % SET_WIDTH, b_picker.y + tile / SET_WIDTH, 1, 1, c_white, screen );
 			// Draw map screen
 			static SDL_Rect worldc = {
-				b_map.x * GRID - 1,
-				b_map.y * GRID - 1,
-				WORLD_WIDTH * GRID + 1,
-				WORLD_HEIGHT * GRID + 1	};
+				b_map.x * GRID_WIDTH - 1,
+				b_map.y * GRID_HEIGHT - 1,
+				WORLD_WIDTH * GRID_WIDTH + 1,
+				WORLD_HEIGHT * GRID_HEIGHT + 1	};
 			static SDL_Rect viewc = {
-				( b_map.x + view_x ) * GRID - 1,
-				( b_map.y + view_y ) * GRID - 1,
-				VIEW_WIDTH * GRID + 1,
-				VIEW_HEIGHT * GRID + 1 };
-			viewc.x = ( b_map.x + view_x ) * GRID - 1;
-			viewc.y = ( b_map.y + view_y ) * GRID - 1;
+				( b_map.x + view_x ) * GRID_WIDTH - 1,
+				( b_map.y + view_y ) * GRID_HEIGHT - 1,
+				VIEW_WIDTH * GRID_WIDTH + 1,
+				VIEW_HEIGHT * GRID_HEIGHT + 1 };
+			viewc.x = ( b_map.x + view_x ) * GRID_WIDTH - 1;
+			viewc.y = ( b_map.y + view_y ) * GRID_HEIGHT - 1;
 			SDL_FillRect( screen, &worldc, SDL_MapRGB( screen->format, 0x00, 0x00, 0x00 ) );
 			SDL_FillRect( screen, &viewc, SDL_MapRGB( screen->format, 0xFF, 0xFF, 0xFF ) ); 
 			b_map.draw( 0, 0, tileset_mapscreen );
@@ -480,8 +505,8 @@ int main( int argc, char *args[] )
 		SDL_Event event;
 		while( SDL_PollEvent( &event ) )
 		{
-			int cx = event.button.x / GRID;
-			int cy = event.button.y / GRID;
+			int cx = event.button.x / GRID_WIDTH;
+			int cy = event.button.y / GRID_HEIGHT;
 			static int lcx = -1, lcy = -1;
 			if( event.type == SDL_MOUSEBUTTONDOWN )
 			{
@@ -603,9 +628,10 @@ int main( int argc, char *args[] )
 	{ outFileName = (char *)"autosave.core"; }
 
 	*( buffer ) = VERSION;
-	*( buffer + 1 ) = (char)GRID;
-	*( buffer + 2 ) = (char)ROOM_WIDTH;
-	*( buffer + 3 ) = (char)ROOM_HEIGHT;
+	*( buffer + 1 ) = (char)GRID_WIDTH;
+	*( buffer + 2 ) = (char)GRID_HEIGHT;
+	*( buffer + 3 ) = (char)ROOM_WIDTH;
+	*( buffer + 4 ) = (char)ROOM_HEIGHT;
 	*( buffer + header_size - 2 ) = (char)WORLD_WIDTH;
 	*( buffer + header_size - 1 ) = (char)WORLD_HEIGHT;
 
