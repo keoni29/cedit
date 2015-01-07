@@ -240,6 +240,9 @@ int main( int argc, char *args[] )
 
 	if( inFileName == NULL )
 	{
+		if( set_view_w == false && set_view_h )	{ VIEW_WIDTH = VIEW_HEIGHT; }		
+		if( set_view_h == false && set_view_w )	{ VIEW_HEIGHT = VIEW_WIDTH; }
+
 		if( set_room_w == false && set_room_h )	{ ROOM_WIDTH = ROOM_HEIGHT; }		
 		if( set_room_h == false && set_room_w )	{ ROOM_HEIGHT = ROOM_WIDTH; }
 
